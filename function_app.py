@@ -6,21 +6,30 @@ import logging
 import datetime
 import shutil  # For directory cleanup
 import os      # For path checks
+import tempfile # For creating temporary directories
 
 # --- Module Imports ---
 # Attempt to import modules assuming 'src' is a package relative to this file
 # or that 'src' contents are deployed alongside function_app.py in the root.
 try:
+    # Use '.' prefix for explicit relative imports if structure guarantees it
+    # Assuming function_app.py is at the same level as the 'src' directory
     from src import (
         config,
         email_client,
         content_parser,
         llm_handler,
-        tts_processor
-        # Placeholders for future modules:
-        # audio_processor,
+        tts_processor,
+        audio_processor
+        # Placeholder for future module:
         # storage_client
     )
+    # Import specific libraries if needed directly
+    try:
+        import openai # Check if openai is importable early
+    except ImportError:
+        logging.error("OpenAI library seems missing despite package structure import.")
+        raise
 except ImportError as e:
     # Fallback for deployment scenarios where 'src' might not be treated as a package
     logging.warning(f"Relative import failed ({e}). Trying direct import assuming modules are in root or PYTHONPATH.")
@@ -30,9 +39,11 @@ except ImportError as e:
         import content_parser
         import llm_handler
         import tts_processor
-        # Placeholders for future modules:
-        # import audio_processor
+        import audio_processor
+        # Placeholder for future module:
         # import storage_client
+        # Ensure necessary libraries are checked in fallback too
+        import openai
     except ImportError as fallback_e:
          logging.error(f"Fallback import also failed ({fallback_e}). Critical module missing or incorrect project structure.")
          # Re-raise or exit depending on desired behavior on fatal error
@@ -45,7 +56,7 @@ app = func.FunctionApp()
 # Schedule Format: "{second} {minute} {hour} {day} {month} {day of week}" (UTC)
 # Example: "0 0 7 * * *" = 7:00 AM UTC daily
 # Set run_on_startup=True for easy local testing (runs when func host starts)
-@app.schedule(schedule="0 0 7 * * *", # ADJUST CRON SCHEDULE AS NEEDED
+@app.schedule(schedule="0 0 7 * * *", # ADJUST CRON SCHEDULE AS NEEDED (e.g., "0 30 13 * * *" for 1:30 PM UTC / 8:30 AM EST)
               arg_name="myTimer",
               run_on_startup=False, # Set to True ONLY for local debugging
               use_monitor=True)    # Set based on whether you want Azure Monitor logging for timer
@@ -64,13 +75,15 @@ def daily_email_podcast_job(myTimer: func.TimerRequest) -> None:
     logging.info(f"Configuration - Target: {config.TARGET_EMAIL_ADDRESS}, Sources: {len(config.EMAIL_SOURCES)}, Summarizer: {config.SUMMARIZATION_MODEL}, TTS Voice: {config.AUDIO_TTS_VOICE}")
 
     # --- Variable Initialization ---
-    temp_tts_dir = None      # Path to the temporary directory holding TTS audio segments
-    gmail_service = None     # Gmail API service object
-    podcast_url = None       # URL of the final uploaded podcast file
-    email_contents = []      # List holding {'source': str, 'original_text': str}
-    summaries = []           # List holding {'source': str, 'summary_text': str}
-    audio_segments = []      # List holding detailed info about each TTS segment file
-    chapters = []            # List holding {'title': str, 'start_ms': int} for the podcast
+    temp_tts_dir = None                 # Path to the temporary directory holding TTS audio segments
+    output_dir_for_final_audio = None   # Path to the temp directory holding the final M4A
+    gmail_service = None                # Gmail API service object
+    podcast_url = None                  # URL of the final uploaded podcast file
+    final_audio_path = None             # Full path to the generated M4A file
+    email_contents = []                 # List holding {'source': str, 'original_text': str}
+    summaries = []                      # List holding {'source': str, 'summary_text': str}
+    audio_segments = []                 # List holding detailed info about each TTS segment file
+    chapters = []                       # List holding {'title': str, 'start_ms': int} for the podcast
 
     try:
         # --- Step 1: Initialize Gmail Service ---
@@ -143,51 +156,55 @@ def daily_email_podcast_job(myTimer: func.TimerRequest) -> None:
         logging.info(f"TTS generation complete. Generated {len(audio_segments)} segments in {temp_tts_dir}.")
 
         # --- Step 6: Assemble Podcast with Chapters ---
-        # TODO: Implement audio_processor using paths/durations from audio_segments
-        logging.warning("Audio assembly logic not yet implemented.")
-        # Placeholder Logic (Remove when audio_processor is implemented)
-        final_audio_path = "dummy_placeholder_podcast.m4a" # Indicates assembly hasn't run
-        logging.info(f"Placeholder: Assuming final audio path is {final_audio_path}")
-        chapters = []
-        current_time_ms = 0
-        for i, seg in enumerate(audio_segments):
-             # Ensure duration exists and is an int
-             duration = seg.get('duration_ms')
-             if isinstance(duration, int) and duration >= 0:
-                  chapters.append({'title': seg.get('source', f'Segment {i}'), 'start_ms': current_time_ms})
-                  current_time_ms += duration
-             else:
-                  logging.warning(f"Invalid or missing duration for segment {i} ({seg.get('source', 'N/A')}). Chapter timing might be inaccurate.")
-        total_duration_secs = current_time_ms // 1000
-        logging.info(f"Placeholder: Calculated {len(chapters)} chapters. Estimated total duration: {total_duration_secs // 60}m {total_duration_secs % 60}s.")
-        # End Placeholder Logic
+        logging.info("Starting podcast audio assembly...")
+        # Define where the final M4A file should go. Using a temporary dir is safest.
+        output_dir_for_final_audio = tempfile.mkdtemp(prefix="podcast_final_")
+        logging.info(f"Using temporary directory for final audio output: {output_dir_for_final_audio}")
+
+        date_str = datetime.date.today().strftime('%Y-%m-%d')
+        output_filename_base = f"daily_digest_{date_str}"
+
+        assembly_result = audio_processor.assemble_podcast(
+            segments=audio_segments,
+            output_filename_base=output_filename_base,
+            output_dir=output_dir_for_final_audio
+        )
+
+        if assembly_result:
+            final_audio_path, chapters = assembly_result # chapters list is updated here
+            logging.info(f"Audio assembly successful. Final M4A: {final_audio_path}")
+            if not chapters:
+                 logging.warning("Audio assembly succeeded but returned no chapter info.")
+        else:
+            logging.error("Audio assembly failed. Aborting.")
+            raise RuntimeError("Failed to assemble final podcast audio.")
 
         # --- Step 7: Upload to Cloud Storage ---
-        # TODO: Implement storage_client using the actual final_audio_path from audio_processor
-        logging.warning("Azure Storage upload logic not yet implemented.")
-        # Placeholder Logic (Remove when storage_client is implemented)
-        if os.path.exists(final_audio_path): # Check if placeholder path is actually real (it shouldn't be)
-             logging.warning("Placeholder audio file path appears to exist - this should not happen yet.")
-             podcast_url = "https://placeholder.invalid/real_path_found_unexpectedly.m4a"
+        # TODO: Replace placeholder logic with actual storage_client call
+        logging.warning("Azure Storage upload logic not yet implemented. Using placeholder.")
+        # Placeholder Logic START
+        if final_audio_path and os.path.exists(final_audio_path):
+             # Simulate successful upload using the real path from assembly
+             container_name = config.AZURE_STORAGE_CONTAINER_NAME or 'podcast-audio'
+             blob_name = os.path.basename(final_audio_path) # Use the actual filename
+             # Generate a dummy SAS token for the placeholder URL format
+             dummy_sas = "sv=2022-11-02&ss=b&srt=o&sp=r&se=2024-12-31T23:59:59Z&st=2024-01-01T00:00:00Z&spr=https&sig=dummy"
+             podcast_url = f"https://{config.AZURE_STORAGE_ACCOUNT_NAME}.blob.core.windows.net/{container_name}/{blob_name}?{dummy_sas}" # Use account name if available in config, else use container name as placeholder
+             logging.info(f"Placeholder: Simulating upload success for {final_audio_path}. URL: {podcast_url}")
         else:
-             # Simulate successful upload if audio *assembly* was supposed to succeed
-             if final_audio_path != "dummy_placeholder_podcast.m4a": # Check if assembly placeholder was updated
-                 podcast_url = f"https://{config.AZURE_STORAGE_CONTAINER_NAME}.blob.core.windows.net/audio/{os.path.basename(final_audio_path)}?sas_token=dummy" # Simulated URL
-                 logging.info(f"Placeholder: Simulating upload success. URL: {podcast_url}")
-             else:
-                 logging.error("Placeholder: Audio assembly step did not produce a final path. Cannot simulate upload.")
-                 podcast_url = None
-        # End Placeholder Logic
+             logging.error("Placeholder: Final audio path not valid or file doesn't exist. Cannot simulate upload.")
+             podcast_url = None
+        # Placeholder Logic END
 
         # --- Step 8: Send Email Notification ---
         if podcast_url:
             logging.info(f"Preparing notification email for URL: {podcast_url}")
-            email_subject = f"Your Daily News Digest Podcast - {datetime.date.today().strftime('%Y-%m-%d')}"
-            # Count summaries actually included (assuming 1 intro, 1 outro)
-            article_count = max(0, len(audio_segments) - 2) if len(audio_segments) >= 2 else 0
+            email_subject = f"Your Daily News Digest Podcast - {date_str}"
+            # Count summaries actually included (excluding Intro/Outro if present)
+            article_count = max(0, len([c for c in chapters if c.get('title', '').lower() not in ('intro', 'outro')]))
             email_body = f"Hi,\n\nHere is your summarized news podcast for today ({article_count} articles included).\n\nListen here: {podcast_url}\n\nChapters:\n"
             for chap in chapters:
-                 start_secs = chap['start_ms'] // 1000
+                 start_secs = chap.get('start_ms', 0) // 1000
                  minutes = start_secs // 60
                  seconds = start_secs % 60
                  email_body += f"- {chap.get('title', 'Chapter')} ({minutes:02d}:{seconds:02d})\n"
@@ -197,12 +214,10 @@ def daily_email_podcast_job(myTimer: func.TimerRequest) -> None:
             if success:
                 logging.info("Notification email sent successfully.")
             else:
-                # Error already logged by send_email
-                logging.error("Failed to send notification email.")
+                logging.error("Failed to send notification email.") # Error already logged by send_email
         else:
             logging.error("Podcast generation or upload failed, no URL obtained. Cannot send notification.")
-            # Raise an error here maybe, to indicate the overall process failed?
-            raise RuntimeError("Failed to obtain final podcast URL.")
+            raise RuntimeError("Failed to obtain final podcast URL after assembly/upload attempt.")
 
 
     except (ConnectionError, ValueError, RuntimeError, openai.APIError) as e:
@@ -242,6 +257,7 @@ def daily_email_podcast_job(myTimer: func.TimerRequest) -> None:
 
     finally:
         # --- Step 9: Cleanup Temporary Files ---
+        # Clean TTS directory
         if temp_tts_dir and os.path.isdir(temp_tts_dir):
             try:
                 shutil.rmtree(temp_tts_dir)
@@ -249,14 +265,22 @@ def daily_email_podcast_job(myTimer: func.TimerRequest) -> None:
             except Exception as e:
                 logging.error(f"Error cleaning up temporary TTS directory {temp_tts_dir}: {e}", exc_info=True)
         else:
-            # Log only if temp_tts_dir was expected to exist but didn't (might indicate earlier failure)
             if temp_tts_dir is not None:
                  logging.warning(f"Temporary TTS directory '{temp_tts_dir}' not found or not a directory during cleanup.")
             else:
                  logging.debug("No temporary TTS directory was created or needed cleanup.")
-        # Also clean up the placeholder final file if it exists? (Shouldn't normally)
-        # if 'final_audio_path' in locals() and os.path.exists(final_audio_path) and "dummy_placeholder" in final_audio_path:
-        #     try: os.remove(final_audio_path)
-        #     except: pass
+
+        # Clean final audio directory (which contains the final M4A)
+        if output_dir_for_final_audio and os.path.isdir(output_dir_for_final_audio):
+            try:
+                shutil.rmtree(output_dir_for_final_audio)
+                logging.info(f"Successfully cleaned up temporary final audio directory: {output_dir_for_final_audio}")
+            except Exception as e:
+                logging.error(f"Error cleaning up final audio directory {output_dir_for_final_audio}: {e}", exc_info=True)
+        else:
+            if output_dir_for_final_audio is not None:
+                 logging.warning(f"Final audio directory '{output_dir_for_final_audio}' not found or not a directory during cleanup.")
+            else:
+                 logging.debug("No final audio directory was created or needed cleanup.")
 
     logging.info(f'Python timer trigger function finished execution at {datetime.datetime.utcnow().replace(tzinfo=datetime.timezone.utc).isoformat()}')
