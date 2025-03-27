@@ -1,0 +1,26 @@
+# requirements.txt
+
+# Azure Functions specific (will be added/updated by 'func init')
+azure-functions
+
+# Google API Client for Gmail
+google-api-python-client
+google-auth-httplib2
+google-auth-oauthlib
+
+# OpenAI API Client
+openai
+
+# Azure Storage Client
+azure-storage-blob
+
+# HTML Parsing
+beautifulsoup4
+lxml # Recommended parser for beautifulsoup
+
+# Audio Processing
+pydub
+
+# Standard utility (often needed)
+requests
+python-dotenv # Useful for local dev even if using local.settings.json sometimes
