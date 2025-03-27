@@ -172,3 +172,20 @@ cython_debug/
 
 # PyPI configuration file
 .pypirc
+
+# Local settings file - Contains secrets!
+local.settings.json
+
+# Google OAuth credentials file - Contains secrets!
+src/credentials.json
+
+# Google OAuth token file - Contains secrets!
+src/token.json
+
+# Optional: Temporary audio files if generated locally
+*.mp3
+*.m4a
+*.wav
+
+# Optional: Log files if generated locally
+*.log
