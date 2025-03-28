@@ -204,16 +204,17 @@ def assemble_podcast(
     logger.info(f"Running ffmpeg to create final M4A with chapters: {final_m4a_path}")
 
     ffmpeg_cmd = [
-        'ffmpeg',
-        '-y',  # Overwrite output file if it exists
-        '-hide_banner', # Suppress verbose banner output
-        '-loglevel', 'warning', # Show only warnings and errors (use 'info' or 'debug' for more)
-        '-i', temp_concat_mp3_path, # Input audio file
-        '-i', temp_metadata_path,   # Input metadata file
-        '-map_metadata', '1',       # Use metadata from the second input file (index 1)
-        '-codec', 'copy',           # Copy audio stream without re-encoding
-        final_m4a_path              # Output M4A file path
-    ]
+    'ffmpeg',
+    '-y',                      # Overwrite output
+    '-hide_banner',            # Less verbose output
+    '-loglevel', 'warning',    # Show warnings/errors
+    '-i', temp_concat_mp3_path, # Input 1: Concatenated MP3 audio
+    '-i', temp_metadata_path,   # Input 2: Metadata file
+    '-map_metadata', '1',       # Apply metadata from Input 2
+    '-codec:a', 'aac',          # Encode audio stream to AAC
+    # Optional: Specify audio bitrate like '-b:a', '192k', - ensure comma if uncommented!
+    final_m4a_path              # Output file MUST be the last argument here
+]
 
     logger.debug(f"ffmpeg command: {' '.join(ffmpeg_cmd)}")
 

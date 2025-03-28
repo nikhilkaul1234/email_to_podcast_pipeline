@@ -57,7 +57,7 @@ app = func.FunctionApp()
 # Set run_on_startup=True for easy local testing (runs when func host starts)
 @app.schedule(schedule="0 0 7 * * *", # ADJUST CRON SCHEDULE AS NEEDED (e.g., "0 30 13 * * *" for 1:30 PM UTC / 8:30 AM EST)
               arg_name="myTimer",
-              run_on_startup=False, # Set to True ONLY for local debugging
+              run_on_startup=True, # Set to True ONLY for local debugging
               use_monitor=True)    # Set based on whether you want Azure Monitor logging for timer
 def daily_email_podcast_job(myTimer: func.TimerRequest) -> None:
     """

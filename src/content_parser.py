@@ -3,6 +3,7 @@
 import re
 import logging
 from bs4 import BeautifulSoup, NavigableString, Comment
+from typing import Optional
 
 logger = logging.getLogger(__name__)
 
