@@ -1,0 +1,20 @@
+// host.json
+{
+  "version": "2.0",
+  "logging": {
+    "applicationInsights": {
+      "samplingSettings": {
+        "isEnabled": true,
+        "excludedTypes": "Request"
+      }
+    },
+    "logLevel": {
+      "default": "Information" // Or "Warning", "Error". Can be overridden by config.py logging setup.
+    }
+  },
+  "extensionBundle": {
+    "id": "Microsoft.Azure.Functions.ExtensionBundle",
+    "version": "[4.*, 5.0.0)" // Use a version range appropriate for Functions v4 runtime
+  },
+   "functionTimeout": "00:30:00" // Set a timeout (e.g., 15 minutes). Max depends on plan. Default might be 5 mins. Needs to be long enough for whole process.
+}
